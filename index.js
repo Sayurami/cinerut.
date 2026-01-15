@@ -12,7 +12,7 @@ export default async function handler(req, res) {
 
     try {
         if (!action && !query && !url) {
-            return res.status(200).json({ status: true, message: "Cineru API is Live 🚀" });
+            return res.status(200).json({ status: true, message: "Cineru API is Live nowr 🚀" });
         }
 
         // --- Search Action ---
