@@ -3,66 +3,49 @@ import * as cheerio from "cheerio";
 
 export default async function handler(req, res) {
   const { action, query, url } = req.query;
+  // 🔑 ඔයාගේ SriHub API Key එක මෙතනට දාන්න (ඔයා එවපු එක මම මේකේ දාලා තියෙන්නේ)
+  const SRIHUB_KEY = "dew_YyT0KDc2boHDasFlmZCqDcPoeDHReD20aYmEsm1G";
+
   const headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Accept-Language": "en-US,en;q=0.9",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Referer": "https://cineru.lk/"
   };
 
   try {
-    if (!action) return res.status(400).json({ status: false, message: "Action missing" });
+    if (!action) return res.status(400).json({ status: false, message: "action missing" });
 
-    // 1️⃣ SEARCH ACTION
+    // --- 1. SEARCH ACTION ---
     if (action === "search") {
-      // මෙන්න මේ URL එක පාවිච්චි කරමු (WordPress search path)
-      const targetUrl = `https://cineru.lk/search/${encodeURIComponent(query)}`;
-      const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`;
+      // 🛡️ Cloudflare bypass කරන්න SriHub Search API එක පාවිච්චි කරමු
+      const searchUrl = `https://api.srihub.store/search/cineru?query=${encodeURIComponent(query)}&apikey=${SRIHUB_KEY}`;
+      const response = await axios.get(searchUrl);
       
-      const response = await axios.get(proxyUrl, { headers });
-      const $ = cheerio.load(response.data);
-      const results = [];
-
-      // වඩාත් පුළුල් selectors පාවිච්චි කරමු
-      $("article, .post, .result-item, .post-column, .item").each((i, el) => {
-        const titleTag = $(el).find("h2 a, h3 a, .entry-title a, .title a").first();
-        const title = titleTag.text().trim();
-        const link = titleTag.attr("href");
-        
-        // Image එක විවිධ තැන්වල තිබිය හැක
-        const image = $(el).find("img").attr("data-src") || $(el).find("img").attr("src");
-
-        if (title && link && link.includes("cineru.lk")) {
-          results.push({
-            title: title,
-            link: link,
-            image: image || "https://dummyimage.com/600x400/000/fff&text=No+Thumbnail"
-          });
-        }
-      });
-
-      // Duplicate ඉවත් කිරීම
-      const uniqueResults = results.filter((v, i, a) => a.findIndex(t => (t.link === v.link)) === i);
-
-      return res.json({ 
-        status: true, 
-        results: uniqueResults.length, 
-        data: uniqueResults 
-      });
+      if (response.data && response.data.results) {
+        return res.json({ 
+          status: true, 
+          results: response.data.results.length, 
+          data: response.data.results 
+        });
+      } else {
+        return res.json({ status: true, results: 0, data: [] });
+      }
     }
 
-    // 2️⃣ MOVIE DETAILS & DOWNLOAD LINKS
+    // --- 2. MOVIE DETAILS & DOWNLOAD BUTTONS ---
     if (action === "movie") {
+      // මෙතනදී සයිට් එකේ Page එකට ගිහින් HTML එක ගන්නවා
       const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`;
       const response = await axios.get(proxyUrl, { headers });
       const $ = cheerio.load(response.data);
-      const download_links = [];
+      const dl_links = [];
 
-      // Cineru download buttons
-      $("a[href*='dl.cineru.lk'], a[href*='pixeldrain'], a.wp-block-button__link").each((i, el) => {
-        const btnTitle = $(el).text().trim() || "Download Now";
+      // 🔍 Screenshot එකේ තියෙන 'Video Copy', 'HC Video Copy' වගේ බටන් හොයාගැනීම
+      $("a.wp-block-button__link").each((i, el) => {
+        const btnTitle = $(el).text().trim();
         const btnLink = $(el).attr("href");
-        
-        if (btnLink && !download_links.some(d => d.direct_link === btnLink)) {
-          download_links.push({
+
+        if (btnLink && (btnLink.includes("dl.cineru.lk") || btnLink.includes("pixeldrain") || btnLink.includes("drive.google"))) {
+          dl_links.push({
             quality: btnTitle.replace(/[📥⬇️]/g, "").trim(),
             direct_link: btnLink
           });
@@ -72,14 +55,21 @@ export default async function handler(req, res) {
       return res.json({
         status: true,
         data: {
-          title: $("h1").first().text().trim(),
+          title: $("h1.entry-title").text().trim() || $("h1").first().text().trim(),
           image: $(".poster img").attr("src") || $("article img").first().attr("src"),
-          download_links: download_links
+          download_links: dl_links
         }
       });
     }
 
+    // --- 3. TOKEN BYPASS ---
+    if (action === "get_direct") {
+      const response = await axios.get(url, { headers, maxRedirects: 15 });
+      const finalUrl = response.request.res.responseUrl || url;
+      return res.json({ status: true, direct_link: finalUrl });
+    }
+
   } catch (err) {
-    return res.status(500).json({ status: false, error: "Cineru is blocking the request. Try again later." });
+    return res.status(500).json({ status: false, error: err.message });
   }
 }
