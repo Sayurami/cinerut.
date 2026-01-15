@@ -12,20 +12,21 @@ export default async function handler(req, res) {
 
     try {
         if (!action && !query && !url) {
-            return res.status(200).json({ status: true, message: "Cineru API is Live  now 🚀" });
+            return res.status(200).json({ status: true, message: "Cineru API is Live 🚀" });
         }
 
-        // --- Search Action (Direct Scrape from Cineru) ---
+        // --- Search Action ---
         if (action === "search") {
             const searchUrl = `https://cineru.lk/?s=${encodeURIComponent(query)}`;
             const response = await axios.get(PROXY + encodeURIComponent(searchUrl));
             const $ = cheerio.load(response.data);
             const results = [];
 
-            // සයිට් එකේ Search results තියෙන කොටස් සොයා ගැනීම
-            $("article").each((i, el) => {
-                const title = $(el).find(".entry-title a").text().trim();
-                const link = $(el).find(".entry-title a").attr("href");
+            // Cineru සයිට් එකේ Search results අල්ලගන්න පුළුවන් හැම විදිහක්ම මෙතන තියෙනවා
+            $("article, .post, .result-item").each((i, el) => {
+                const titleElement = $(el).find("h2 a, h3 a, .entry-title a").first();
+                const title = titleElement.text().trim();
+                const link = titleElement.attr("href");
                 const image = $(el).find("img").attr("src");
 
                 if (title && link) {
@@ -44,29 +45,27 @@ export default async function handler(req, res) {
             const $ = cheerio.load(response.data);
             const dl_links = [];
 
-            // ලින්ක් එක ඇතුලේ තියෙන ඩවුන්ලෝඩ් බටන් සෙවීම
+            // ඩවුන්ලෝඩ් ලින්ක්ස් සෙවීම
             $("a").each((i, el) => {
                 const btnTitle = $(el).text().trim();
                 const btnLink = $(el).attr("href");
 
+                // Download Button එකක් කියලා හඳුනාගන්න පුළුවන් වචන
                 if (btnLink && (btnLink.includes("dl.cineru.lk") || btnLink.includes("pixeldrain") || btnLink.includes("mega.nz"))) {
-                    dl_links.push({ 
-                        name: btnTitle || "Download Link", 
-                        link: btnLink 
-                    });
+                    dl_links.push({ name: btnTitle || "Download Link", link: btnLink });
                 }
             });
 
             return res.json({
                 status: true,
                 data: {
-                    title: $("h1.entry-title").text().trim() || $("h1").first().text().trim(),
-                    image: $(".wp-block-image img").attr("src"),
+                    title: $("h1").first().text().trim(),
+                    image: $(".wp-block-image img, .featured-media img").attr("src"),
                     download_links: dl_links
                 }
             });
         }
     } catch (err) {
-        return res.status(500).json({ status: false, error: "Cineru Site Error: " + err.message });
+        return res.status(500).json({ status: false, error: err.message });
     }
 }
