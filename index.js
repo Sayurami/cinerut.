@@ -10,7 +10,7 @@ export default async function handler(req, res) {
 
     if (!action) return res.status(400).json({ status: false, message: "action missing" });
 
-    // --- 1. SEARCH ACTION ---
+    // 1. Search Action (Cineru එකේ සෙවීම)
     if (action === "search") {
       const { data } = await axios.get(`https://cineru.lk/?s=${encodeURIComponent(query)}`, { headers });
       const $ = cheerio.load(data);
@@ -20,31 +20,28 @@ export default async function handler(req, res) {
         results.push({
           title: $(el).find(".title a").text().trim(),
           link: $(el).find(".title a").attr("href"),
-          image: $(el).find("img").attr("src") || $(el).find(".poster img").attr("src"),
-          rating: $(el).find(".rating").text().trim(),
-          year: $(el).find(".year").text().trim()
+          image: $(el).find("img").attr("src"),
+          type: $(el).find(".post-type").text().trim() || "Movie"
         });
       });
       return res.json({ status: true, data: results });
     }
 
-    // --- 2. MOVIE DETAILS & DOWNLOAD BUTTONS ---
+    // 2. Movie/Details Action (ලින්ක් බටන්ස් ලබා ගැනීම)
     if (action === "movie" || action === "details") {
-      if (!url) return res.status(400).json({ status: false, message: "url missing" });
-      
       const { data } = await axios.get(url, { headers });
       const $ = cheerio.load(data);
-      const download_options = [];
+      const download_links = [];
 
-      // Cineru එකේ බටන්ස් (HC Video, Video Copy, etc.)
+      // Cineru එකේ බටන්ස් ඇතුළේ තියෙන Download ලින්ක්ස්
       $("a.wp-block-button__link").each((i, el) => {
-        const btnText = $(el).text().trim();
-        const btnLink = $(el).attr("href");
+        const title = $(el).text().trim();
+        const href = $(el).attr("href");
 
-        if (btnLink && (btnLink.includes("dl.cineru.lk") || btnLink.includes("pixeldrain") || btnLink.includes("drive"))) {
-            download_options.push({
-            quality: btnText,
-            link: btnLink
+        if (href && (href.includes("dl.cineru.lk") || href.includes("pixeldrain") || href.includes("drive.google"))) {
+          download_links.push({
+            quality: title,
+            direct_link: href
           });
         }
       });
@@ -52,25 +49,18 @@ export default async function handler(req, res) {
       return res.json({
         status: true,
         data: {
-          title: $(".data h1").text().trim() || $("h1.entry-title").text().trim(),
+          title: $(".entry-title").text().trim() || $("h1").first().text().trim(),
           image: $(".poster img").attr("src"),
-          description: $(".wp-content p").first().text().trim(),
-          download_links: download_options
+          download_links: download_links
         }
       });
     }
 
-    // --- 3. TOKEN BYPASS (Optional - Direct Link Generation) ---
-    // සටහන: dl.cineru.lk ලින්ක් බොට් එකෙන්ම Headers check කරලා ගන්න පුළුවන් නිසා 
-    // මේ API එකෙන් ඩිරෙක්ට් බටන් ලින්ක් එක දෙන එක තමයි ලේසිම.
+    // 3. Direct Bypass (Token එකෙන් නියම ලින්ක් එක ගැනීම)
     if (action === "get_direct") {
-        if (!url) return res.status(400).json({ status: false, message: "url missing" });
-        
-        // Headers පරීක්ෂා කරලා Redirect වන අවසාන URL එක ලබා ගැනීම
-        const response = await axios.head(url, { maxRedirects: 15, headers });
-        const direct = response.request.res.responseUrl || url;
-        
-        return res.json({ status: true, direct_link: direct });
+      const response = await axios.head(url, { maxRedirects: 15, headers });
+      const finalUrl = response.request.res.responseUrl || url;
+      return res.json({ status: true, direct_link: finalUrl });
     }
 
   } catch (err) {
