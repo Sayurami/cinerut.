@@ -27,7 +27,7 @@ export default async function handler(req, res) {
             return res.status(200).json({ creator: "Hansa Dewmina", success: true, download_links: downloadLinks });
         }
 
-        // 2. Movie Search කිරීම (Updated Logic)
+        // 2. Movie Search කිරීම (Enhanced Selectors)
         if (s) {
             const targetUrl = `https://cineru.lk/?s=${encodeURIComponent(s)}`;
             const proxyUrl = `https://translate.google.com/translate?sl=en&tl=en&u=${encodeURIComponent(targetUrl)}`;
@@ -37,19 +37,23 @@ export default async function handler(req, res) {
             const $ = cheerio.load(html);
             const results = [];
 
-            // මෙතනදී අපි සෘජුවම post titles තියෙන classes පීරනවා
-            $('.post-title a, .entry-title a, article a').each((i, el) => {
-                const title = $(el).text().trim();
-                let link = $(el).attr('href');
+            // සෘජුවම article ඇතුළේ තියෙන ලින්ක්ස් පීරනවා
+            $('article').each((i, el) => {
+                const titleNode = $(el).find('h2 a, h3 a, .post-title a');
+                const imgNode = $(el).find('img');
+                
+                let title = titleNode.text().trim();
+                let link = titleNode.attr('href');
+                let image = imgNode.attr('src') || imgNode.attr('data-src');
 
-                if (title && title.length > 10 && link) { // නම ටිකක් දිග එකක් නම් විතරක් ගන්නවා (Menu items අයින් කරන්න)
+                if (title && link) {
                     if (link.includes('u=')) link = decodeURIComponent(link.split('u=')[1].split('&')[0]);
                     
-                    // එකම ලින්ක් එක දෙපාරක් ඇඩ් වීම වළක්වනවා
                     if (!results.some(r => r.url === link)) {
                         results.push({
                             title: title,
-                            url: link
+                            url: link,
+                            image: image
                         });
                     }
                 }
@@ -59,7 +63,7 @@ export default async function handler(req, res) {
                 creator: "Hansa Dewmina", 
                 success: true, 
                 total_results: results.length,
-                results: results.slice(0, 20) // මුල් රිසල්ට්ස් 20 විතරක් දෙනවා
+                results: results
             });
         }
 
