@@ -14,32 +14,41 @@ export default async function handler(req, res) {
 
     try {
         // Cineru සයිට් එකේ Search URL එක
-        const targetUrl = `https://cineru.lk/?s=${encodeURIComponent(s)}`;
+        const query = encodeURIComponent(s);
+        const targetUrl = `https://cineru.lk/?s=${query}`;
         
-        // Cloudflare bypass කරන්න Google Translate Proxy එක හරහා යනවා
+        // Cloudflare bypass කිරීමට Google Proxy පාවිච්චි කිරීම
         const proxyUrl = `https://translate.google.com/translate?sl=en&tl=en&u=${encodeURIComponent(targetUrl)}`;
 
         const { data } = await axios.get(proxyUrl, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://www.google.com/',
+                'Accept-Language': 'en-US,en;q=0.9'
+            },
+            timeout: 15000 // තත්පර 15ක කාලයක් ලබා දෙනවා
         });
 
         const $ = cheerio.load(data);
         const results = [];
 
-        // Screenshot එකේ තියෙන විදිහට article tags පීරනවා
+        // Cineru එකේ HTML එක පීරන ක්‍රමය
         $('article').each((i, el) => {
-            const titleElement = $(el).find('h2.post-title a, h3.post-title a');
-            const imgElement = $(el).find('.post-thumbnail img, .entry-thumb img');
+            const titleNode = $(el).find('h2.post-title a');
+            const imgNode = $(el).find('.post-thumbnail img');
             
-            let title = titleElement.text().trim();
-            let link = titleElement.attr('href');
-            let image = imgElement.attr('src') || imgElement.attr('data-src');
+            let title = titleNode.text().trim();
+            let link = titleNode.attr('href');
+            let image = imgNode.attr('src') || imgNode.attr('data-src') || imgNode.attr('srcset');
 
-            // Google translate link එක අස්සෙන් original link එක ගලවා ගැනීම
+            // Google translate හරහා එන ලින්ක් එකෙන් ඔරිජිනල් එක වෙන් කර ගැනීම
             if (link && link.includes('u=')) {
                 link = decodeURIComponent(link.split('u=')[1].split('&')[0]);
+            }
+
+            // Image එක srcset එකක තිබුණොත් පළමු image එක තෝරා ගැනීම
+            if (image && image.includes(',')) {
+                image = image.split(' ')[0];
             }
 
             if (title) {
@@ -51,6 +60,23 @@ export default async function handler(req, res) {
             }
         });
 
+        // දත්ත ලැබුනේ නැතිනම් සෘජුවම සයිට් එකෙන් උත්සාහ කිරීම (Fallback)
+        if (results.length === 0) {
+            // මෙතනදී සෘජුවම Fetch කරන්න උත්සාහ කරනවා
+            const directData = await axios.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+            const _$ = cheerio.load(directData.data);
+            _$('article').each((i, el) => {
+                const t = _$(el).find('h2.post-title a');
+                if (t.text()) {
+                    results.push({
+                        title: t.text().trim(),
+                        url: t.attr('href'),
+                        image: _$(el).find('img').attr('src')
+                    });
+                }
+            });
+        }
+
         return res.status(200).json({
             creator: "Hansa Dewmina",
             success: true,
@@ -61,7 +87,7 @@ export default async function handler(req, res) {
     } catch (error) {
         return res.status(500).json({
             success: false,
-            error: "දත්ත ලබා ගැනීමේදී ගැටලුවක්: " + error.message
+            error: "Error: " + error.message
         });
     }
 }
