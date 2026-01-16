@@ -1,9 +1,11 @@
+import * as cheerio from 'cheerio';
+
 export default async function handler(req, res) {
     const { s, url } = req.query;
     const creatorInfo = { creator: "Hansa Dewmina", success: true };
 
     try {
-        // 1. Download Links ලබා ගැනීම
+        // 1. Download Links (Directly trying Pixeldrain/GDrive search within the page)
         if (url) {
             const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
             const response = await fetch(proxyUrl);
@@ -21,25 +23,29 @@ export default async function handler(req, res) {
             return res.status(200).json({ ...creatorInfo, download_links: uniqueLinks });
         }
 
-        // 2. Movie Search කිරීම (Cloudflare Bypass Trick)
+        // 2. Movie Search (Using Google Search to bypass Cloudflare)
         if (s) {
-            const wpApiUrl = `https://cineru.lk/wp-json/wp/v2/posts?search=${encodeURIComponent(s)}&_embed`;
+            const googleSearchUrl = `https://www.google.com/search?q=site:cineru.lk+${encodeURIComponent(s)}`;
             
-            // සෘජුවම යන්නේ නැතිව AllOrigins proxy එක හරහා යනවා
-            const finalUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(wpApiUrl)}`;
+            const response = await fetch(googleSearchUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36' }
+            });
+            const html = await response.text();
+            const $ = cheerio.load(html);
+            const results = [];
 
-            const response = await fetch(finalUrl);
-            if (!response.ok) throw new Error("Cloudflare strongly blocking all proxies.");
+            // Google Search Results වලින් Cineru ලින්ක් ටික වෙන් කරගැනීම
+            $('div.g').each((i, el) => {
+                const title = $(el).find('h3').text();
+                const link = $(el).find('a').attr('href');
 
-            const jsonResponse = await response.json();
-            const posts = JSON.parse(jsonResponse.contents); // Proxy එක ඇතුලේ එන්නේ string එකක් නිසා parse කරනවා
-            
-            const results = posts.map(post => ({
-                title: post.title.rendered.replace(/&#8211;/g, '-').replace(/&#8217;/g, "'"),
-                url: post.link,
-                image: post._embedded?.['wp:featuredmedia']?.[0]?.source_url || null,
-                date: post.date
-            }));
+                if (title && link && link.includes('cineru.lk')) {
+                    results.push({
+                        title: title.replace(' - සිනෙරූ - සිංහල උපසිරැසි', '').trim(),
+                        url: link
+                    });
+                }
+            });
 
             return res.status(200).json({
                 ...creatorInfo,
@@ -48,13 +54,9 @@ export default async function handler(req, res) {
             });
         }
 
-        return res.status(200).json({ ...creatorInfo, message: "Use ?s=name for search or ?url=link for links" });
+        return res.status(200).json({ ...creatorInfo, message: "Use ?s=name for Google-Powered search" });
 
     } catch (error) {
-        return res.status(500).json({ 
-            success: false, 
-            error: "Bypass Error: " + error.message,
-            tip: "Try searching again in a few seconds."
-        });
+        return res.status(500).json({ success: false, error: error.message });
     }
 }
