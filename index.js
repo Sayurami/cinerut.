@@ -1,76 +1,68 @@
-import puppeteer from 'puppeteer-core';
+import axios from 'axios';
+import * as cheerio from 'cheerio';
 
 export default async function handler(req, res) {
-    const { s } = req.query; 
-    
-    // වෙල්කම් මැසේජ් එකක්
+    const { s } = req.query;
+
     if (!s) {
-        return res.status(200).json({ 
+        return res.status(200).json({
             creator: "Hansa Dewmina",
-            message: "සෙවිය යුතු නම ලබා දෙන්න (Ex: ?s=maharaja)" 
+            success: false,
+            message: "සෙවිය යුතු නම ලබා දෙන්න (Ex: ?s=maharaja)"
         });
     }
 
-    const BROWSERLESS_TOKEN = "2TneChv4ickxkIC8237b1c23e826534cc1208fa0821d20bf6"; 
-    const targetUrl = `https://cineru.lk/?s=${encodeURIComponent(s)}`;
-
-    let browser;
     try {
-        // Browserless හරහා සම්බන්ධ වීම
-        browser = await puppeteer.connect({
-            browserWSEndpoint: `wss://chrome.browserless.io?token=${BROWSERLESS_TOKEN}`,
+        // Cloudflare Bypass කරන්න Google Translate Proxy එක පාවිච්චි කරනවා
+        const targetUrl = `https://cineru.lk/?s=${encodeURIComponent(s)}`;
+        const proxyUrl = `https://translate.google.com/translate?sl=en&tl=en&u=${encodeURIComponent(targetUrl)}`;
+
+        const { data } = await axios.get(proxyUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.9'
+            }
         });
 
-        const page = await browser.newPage();
+        const $ = cheerio.load(data);
+        const results = [];
 
-        // සැබෑ Browser එකක් ලෙස පෙන්වීමට User-Agent එකක් යොදනවා
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        // Cineru සයිට් එකේ සර්ච් රිසල්ට්ස් තියෙන Selector එක
+        $('article').each((i, el) => {
+            const titleElement = $(el).find('h2.post-title a');
+            const imgElement = $(el).find('.post-thumbnail img');
+            const descElement = $(el).find('.entry p');
 
-        // සයිට් එකට යනවා
-        await page.goto(targetUrl, { 
-            waitUntil: 'networkidle2', 
-            timeout: 60000 
+            let title = titleElement.text().trim();
+            let link = titleElement.attr('href');
+            let image = imgElement.attr('src') || imgElement.attr('data-src');
+
+            // Google Translate ලින්ක් එක අස්සෙන් ඔරිජිනල් ලින්ක් එක ගලවා ගැනීම
+            if (link && link.includes('u=')) {
+                link = decodeURIComponent(link.split('u=')[1].split('&')[0]);
+            }
+
+            if (title) {
+                results.push({
+                    title: title,
+                    url: link,
+                    image: image,
+                    description: descElement.text().trim() || ""
+                });
+            }
         });
 
-        // HTML එක ඇතුළෙන් දත්ත ඇදලා ගැනීම (Web Scraping Logic)
-        const movies = await page.evaluate(() => {
-            const results = [];
-            // Cineru සර්ච් රිසල්ට්ස් වල තියෙන article ටැග් එක ගන්නවා
-            const items = document.querySelectorAll('article');
-            
-            items.forEach(item => {
-                const titleNode = item.querySelector('.post-title a');
-                const imgNode = item.querySelector('.post-thumbnail img');
-                const descNode = item.querySelector('.entry p');
-
-                if (titleNode) {
-                    results.push({
-                        title: titleNode.innerText.trim(),
-                        url: titleNode.href,
-                        image: imgNode ? (imgNode.getAttribute('src') || imgNode.getAttribute('data-src')) : null,
-                        description: descNode ? descNode.innerText.trim() : ""
-                    });
-                }
-            });
-            return results;
-        });
-
-        await browser.close();
-
-        // අවසන් ප්‍රතිඵලය JSON ලෙස ලබා දීම
         return res.status(200).json({
             creator: "Hansa Dewmina",
             success: true,
-            total_results: movies.length,
-            results: movies
+            total_results: results.length,
+            results: results
         });
 
     } catch (error) {
-        if (browser) await browser.close();
-        console.error(error);
-        return res.status(500).json({ 
-            success: false, 
-            error: "Error: " + error.message 
+        return res.status(500).json({
+            success: false,
+            error: "Error fetching data: " + error.message
         });
     }
 }
