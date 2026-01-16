@@ -1,53 +1,63 @@
-import * as cheerio from 'cheerio';
-
 export default async function handler(req, res) {
-    const { s } = req.query;
+    const { s, url } = req.query;
 
-    if (!s) {
-        return res.status(200).json({ 
-            creator: "Hansa Dewmina", 
-            message: "සෙවිය යුතු නම ලබා දෙන්න (Ex: ?s=lucky)" 
-        });
-    }
+    // නිර්මාතෘගේ නම සහ මූලික තොරතුරු
+    const creatorInfo = { creator: "Hansa Dewmina", success: true };
 
     try {
-        const targetUrl = `https://cineru.lk/?s=${encodeURIComponent(s)}`;
-        // AllOrigins Proxy එක පාවිච්චි කරලා Cloudflare Bypass කරනවා
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
-
-        const response = await fetch(proxyUrl);
-        const json = await response.json();
-        const html = json.contents; // Proxy එකෙන් එන HTML එක මෙතන තියෙන්නේ
-
-        const $ = cheerio.load(html);
-        const results = [];
-
-        // Cineru එකේ ඕනෑම ලින්ක් එකක් පීරනවා
-        $('article, .post-item, .item-list').each((i, el) => {
-            const titleNode = $(el).find('h2 a, h3 a, a').first();
-            const imgNode = $(el).find('img').first();
+        // 1. Movie එක ඇතුළේ තියෙන Download Links ලබා ගැනීම
+        if (url) {
+            const proxyUrl = `https://translate.google.com/translate?sl=en&tl=en&u=${encodeURIComponent(url)}`;
+            const response = await fetch(proxyUrl);
+            const html = await response.text();
             
-            let title = titleNode.text().trim();
-            let link = titleNode.attr('href');
-            let image = imgNode.attr('src') || imgNode.attr('data-src');
+            // සරල Regex එකකින් ලින්ක් ටික වෙන් කරගන්නවා
+            const driveLinks = html.match(/drive\.google\.com\/file\/d\/[a-zA-Z0-9_-]+/g) || [];
+            const pixelLinks = html.match(/pixeldrain\.com\/u\/[a-zA-Z0-9_-]+/g) || [];
 
-            // අනවශ්‍ය ලින්ක් අයින් කරලා මූවී ලින්ක් විතරක් ගන්නවා
-            if (title && title.length > 5 && link && link.includes('cineru.lk') && !link.includes('?s=')) {
-                if (!results.some(r => r.url === link)) {
-                    results.push({
-                        title: title,
-                        url: link,
-                        image: image
-                    });
-                }
+            const uniqueLinks = [...new Set([...driveLinks, ...pixelLinks])].map(link => ({
+                host: link.includes('google') ? 'GDrive' : 'Pixeldrain',
+                link: `https://${link}`
+            }));
+
+            return res.status(200).json({ ...creatorInfo, download_links: uniqueLinks });
+        }
+
+        // 2. Movie Search කිරීම (WordPress API හරහා)
+        if (s) {
+            // WordPress JSON API එක පාවිච්චි කිරීම
+            const wpApiUrl = `https://cineru.lk/wp-json/wp/v2/posts?search=${encodeURIComponent(s)}&_embed`;
+            
+            const response = await fetch(wpApiUrl);
+            if (!response.ok) throw new Error("Cineru API Access Denied");
+
+            const posts = await response.json();
+            
+            const results = posts.map(post => ({
+                title: post.title.rendered
+                    .replace(/&#8211;/g, '-')
+                    .replace(/&#8217;/g, "'")
+                    .replace(/&#8212;/g, '--'),
+                url: post.link,
+                image: post._embedded?.['wp:featuredmedia']?.[0]?.source_url || null,
+                posted_date: post.date
+            }));
+
+            return res.status(200).json({
+                ...creatorInfo,
+                total_results: results.length,
+                results: results
+            });
+        }
+
+        // Endpoint එකට නිකන්ම ආවොත් පෙන්වන මැසේජ් එක
+        return res.status(200).json({ 
+            ...creatorInfo, 
+            status: "Running",
+            usage: {
+                search: "/?s=movie_name",
+                links: "/?url=movie_url"
             }
-        });
-
-        return res.status(200).json({
-            creator: "Hansa Dewmina",
-            success: true,
-            total_results: results.length,
-            results: results
         });
 
     } catch (error) {
