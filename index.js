@@ -1,23 +1,29 @@
 import puppeteer from 'puppeteer-core';
 
 export default async function handler(req, res) {
-    const { s } = req.query; // Search query එක මෙතනින් ගන්නවා
-    if (!s) return res.status(400).json({ error: "සෙවිය යුතු නම ලබා දෙන්න (Ex: ?s=spider)" });
+    const { s } = req.query; 
+    
+    // වෙල්කම් මැසේජ් එකක්
+    if (!s) {
+        return res.status(200).json({ 
+            creator: "Hansa Dewmina",
+            message: "සෙවිය යුතු නම ලබා දෙන්න (Ex: ?s=maharaja)" 
+        });
+    }
 
-    // ඔයා දීපු Token එක
     const BROWSERLESS_TOKEN = "2TneChv4ickxkIC8237b1c23e826534cc1208fa0821d20bf6"; 
     const targetUrl = `https://cineru.lk/?s=${encodeURIComponent(s)}`;
 
     let browser;
     try {
-        // Browserless Remote Browser එකට සම්බන්ධ වීම
+        // Browserless හරහා සම්බන්ධ වීම
         browser = await puppeteer.connect({
             browserWSEndpoint: `wss://chrome.browserless.io?token=${BROWSERLESS_TOKEN}`,
         });
 
         const page = await browser.newPage();
 
-        // සැබෑ Browser එකක් වගේ පෙන්වීමට User-Agent එකක් සෙට් කරනවා
+        // සැබෑ Browser එකක් ලෙස පෙන්වීමට User-Agent එකක් යොදනවා
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
         // සයිට් එකට යනවා
@@ -26,10 +32,11 @@ export default async function handler(req, res) {
             timeout: 60000 
         });
 
-        // HTML එක ඇතුළෙන් දත්ත ටික ඇදලා ගන්නවා
+        // HTML එක ඇතුළෙන් දත්ත ඇදලා ගැනීම (Web Scraping Logic)
         const movies = await page.evaluate(() => {
             const results = [];
-            const items = document.querySelectorAll('article.item-list');
+            // Cineru සර්ච් රිසල්ට්ස් වල තියෙන article ටැග් එක ගන්නවා
+            const items = document.querySelectorAll('article');
             
             items.forEach(item => {
                 const titleNode = item.querySelector('.post-title a');
@@ -40,7 +47,7 @@ export default async function handler(req, res) {
                     results.push({
                         title: titleNode.innerText.trim(),
                         url: titleNode.href,
-                        image: imgNode ? imgNode.src : null,
+                        image: imgNode ? (imgNode.getAttribute('src') || imgNode.getAttribute('data-src')) : null,
                         description: descNode ? descNode.innerText.trim() : ""
                     });
                 }
@@ -50,7 +57,7 @@ export default async function handler(req, res) {
 
         await browser.close();
 
-        // ප්‍රතිඵල ලබා දීම
+        // අවසන් ප්‍රතිඵලය JSON ලෙස ලබා දීම
         return res.status(200).json({
             creator: "Hansa Dewmina",
             success: true,
@@ -63,7 +70,7 @@ export default async function handler(req, res) {
         console.error(error);
         return res.status(500).json({ 
             success: false, 
-            error: "Browserless Error: " + error.message 
+            error: "Error: " + error.message 
         });
     }
 }
