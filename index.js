@@ -1,7 +1,5 @@
-const express = require('express');
-const axios = require('axios');
-const cheerio = require('cheerio');
-
+import express from 'express'; import axios from 'axios'; 
+import * as cheerio from 'cheerio'; 
 const app = express();
 const PORT = process.env.PORT || 5000;
 const BASE_URL = 'https://cinesubz.co';
@@ -668,4 +666,4 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`CineSubz API v${API_INFO.version} by ${API_INFO.developer} started on port ${PORT}`);
 });
 
-module.exports = app;
+export default app;
